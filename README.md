@@ -1,4 +1,4 @@
 multipath-vpn
 =============
 
-A vpn which supports failover and multiple connections
+A tunneling VPN which supports failover and multiple connections via the linux tuntap interface.
