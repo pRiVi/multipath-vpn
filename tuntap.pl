@@ -194,8 +194,8 @@ sub startUDPSocket {
                   Proto     => 'udp',
                ) or die "ERROR in Socket Creation : $!\n";
             };
-            if (@!) {
-               print "Not possible: ".@!;
+            if ($!) {
+               print "Not possible: ".$!;
                return;
             } else {
                #$wheel->put({ payload => [ 'This datagram will go to the default address.' ], addr => '1.2.3.4', port => 13456 });
@@ -209,7 +209,7 @@ sub startUDPSocket {
                   $kernel->select_read($heap->{udp}, "input");
                   if ($bind) {
                      unless (defined($heap->{udp}->send("a"))) {
-                        print "PostBind not worked: ".@!."\n";
+                        print "PostBind not worked: ".$!."\n";
                      }
                   }
                } else {
