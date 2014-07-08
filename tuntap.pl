@@ -75,6 +75,7 @@ while(<CONFIG>) {
          mask => $config[2] || 24,
          mtu  => $config[3] || 1300,
          dstip => $config[4],
+         br    => $config[5],
       };
    } elsif($config[0] && (lc($config[0]) eq "route")) {
       push(@{$config->{route}}, {
@@ -325,11 +326,16 @@ POE::Session->create(
       _start => sub {
          my ($kernel, $heap) = @_[KERNEL, HEAP];
          $heap->{fh} = new IO::File(TUNNEL_DEVICE, 'r+') or die "Can't open ".TUNNEL_DEVICE.": $!";
-         $heap->{ifr} = pack(STRUCT_IFREQ, $name||'', IFF_TUN);
+         $heap->{ifr} = pack(STRUCT_IFREQ, $name||'', ($config->{local}->{ip} =~ m,^[\d\.]+$,) ? IFF_TUN : IFF_TAP);
          ioctl $heap->{fh}, TUNSETIFF, $heap->{ifr} or die "Can't ioctl() tunnel: $!";
          $heap->{interface} = unpack STRUCT_IFREQ, $heap->{ifr};
          print "Interface ".$heap->{interface}." up!\n";
-         system("ifconfig ".$heap->{interface}." ".$config->{local}->{ip}."/".$config->{local}->{mask}." up");
+         if ($config->{local}->{ip} =~ m,^[\d\.]+$,) {
+            system("ifconfig ".$heap->{interface}." ".$config->{local}->{ip}."/".$config->{local}->{mask}." up");
+         } else {
+            system("ifconfig ".$heap->{interface}." up");
+            system("brctl", "addif", $config->{local}->{ip}, $heap->{interface});
+         }
          system("ifconfig ".$heap->{interface}." dstaddr ".$config->{local}->{dstip})
             if ($config->{local}->{dstip});
          system("iptables -A FORWARD -o ".$heap->{interface}." -p tcp -m tcp --tcp-flags SYN,RST SYN -m tcpmss --mss ".($config->{local}->{mtu}-40).":65495 -j TCPMSS --clamp-mss-to-pmtu")
