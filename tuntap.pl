@@ -194,8 +194,8 @@ sub startUDPSocket {
                   Proto     => 'udp',
                ) or die "ERROR in Socket Creation : $!\n";
             };
-            if ($!) {
-               print "Not possible: ".$!;
+            if ($@) {
+               print "Not possible: ".$@."\n";
                return;
             } else {
                #$wheel->put({ payload => [ 'This datagram will go to the default address.' ], addr => '1.2.3.4', port => 13456 });
