@@ -43,7 +43,6 @@ use constant TUN_PKT_STRIP => 0x0001;
 use constant STRUCT_IFREQ => 'Z16 s';
 use constant TUNNEL_DEVICE => '/dev/net/tun';
 
-my $name = 'tun%d';
 my $tuntapsession = undef;
 
 my $config = {};
@@ -61,8 +60,8 @@ while(<CONFIG>) {
          name    => $config[1],
          src     => $config[2],
          srcport => $config[3],
-         dstip   => $config[4] || undef,
-         dstport => $config[5] || undef,
+         dstip   => $config[4]   || undef,
+         dstport => $config[5]   || undef,
          factor  => $config[6],
          #curdstip => $config[4] || undef,
          lastdstip => $config[4] || undef,
@@ -71,11 +70,11 @@ while(<CONFIG>) {
       };
    } elsif($config[0] && (lc($config[0]) eq "local")) {
       $config->{local} = {
-         ip   => $config[1],
-         mask => $config[2] || 24,
-         mtu  => $config[3] || 1300,
-         dstip => $config[4],
-         br    => $config[5],
+         ip      => $config[1],
+         mask    => $config[2] || 24,
+         mtu     => $config[3] || 1300,
+         dstip   => $config[4],
+         options => $config[5],
       };
    } elsif($config[0] && (lc($config[0]) eq "route")) {
       push(@{$config->{route}}, {
@@ -325,8 +324,9 @@ POE::Session->create(
    inline_states => {
       _start => sub {
          my ($kernel, $heap) = @_[KERNEL, HEAP];
+         my $dotun = (($config->{local}->{ip} =~ m,^[\d\.]+$,) && ($config->{local}->{options} !~ m,tap,)) ? 1 : 0;
          $heap->{fh} = new IO::File(TUNNEL_DEVICE, 'r+') or die "Can't open ".TUNNEL_DEVICE.": $!";
-         $heap->{ifr} = pack(STRUCT_IFREQ, $name||'', ($config->{local}->{ip} =~ m,^[\d\.]+$,) ? IFF_TUN : IFF_TAP);
+         $heap->{ifr} = pack(STRUCT_IFREQ, $dotun ? 'tun%d' : 'tap%d', $dotun ? IFF_TUN : IFF_TAP);
          ioctl $heap->{fh}, TUNSETIFF, $heap->{ifr} or die "Can't ioctl() tunnel: $!";
          $heap->{interface} = unpack STRUCT_IFREQ, $heap->{ifr};
          print "Interface ".$heap->{interface}." up!\n";
