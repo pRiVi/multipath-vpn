@@ -1,4 +1,4 @@
-multipath-vpn
+Multipath-VPN
 =============
 
 A tunneling VPN client and server, which supports failover and multiple connections via the linux tuntap interface.
@@ -7,7 +7,7 @@ A tunneling VPN client and server, which supports failover and multiple connecti
 Install
 ------
 
- * First install the required Perl modules:
+ * First install the required Perl modules:   
    ```cpan POE::Wheel::UDP IO::Interface::Simple```
 
 
