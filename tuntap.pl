@@ -1,16 +1,20 @@
 #!/usr/bin/perl -w
 use strict;
-use IO::File;
+use warnings;
+
 use POE;
 use POE::Wheel::UDP;
-use Socket qw(IPPROTO_TCP TCP_NODELAY);
-use POE
-  qw(Component::Server::TCP Component::Client::TCP Filter::Block Filter::Stream);
-use Time::HiRes qw/gettimeofday tv_interval/;
+use POE qw(Component::Server::TCP Component::Client::TCP Filter::Block Filter::Stream);
+
+use IO::File;
 use IO::Interface::Simple;
 use IO::Socket::INET;
 use IO::Socket;
+
+use Socket qw(IPPROTO_TCP TCP_NODELAY);
+use Time::HiRes qw/gettimeofday tv_interval/;
 use MIME::Base64;
+
 
 my $sessions   = {};
 my $doCrypt    = 0;
@@ -51,9 +55,13 @@ my $config   = {};
 my $seen     = {};
 my $lastseen = {};
 
+# open config file
 open( CONFIG, "<", $ARGV[0] || "/etc/multivpn.cfg" )
   || die "Config not found: " . $!;
-while (<CONFIG>) {
+
+# read and parse config file
+while (<CONFIG>)
+{
     chomp;
     s,\#.*$,,gi;
     next if m,^\s*$,;
@@ -102,7 +110,9 @@ while (<CONFIG>) {
 }
 close(CONFIG);
 
-sub fetchIPs {
+
+sub fetchIPs
+{
     foreach my $curlink ( keys %{ $config->{links} } ) {
         my $newsrcaddress = '';
         if ( my $curif =
@@ -183,7 +193,9 @@ POE::Session->create(
     },
 );
 
-sub doIf {
+
+sub doIf
+{
     my $up = shift;
     foreach my $curroute ( @{ $config->{route} } ) {
         my $tmp =
@@ -213,7 +225,8 @@ sub doIf {
     }
 }
 
-sub startUDPSocket {
+sub startUDPSocket
+{
     my $link = shift;
     my $con  = $config->{links}->{$link};
 
@@ -501,7 +514,8 @@ POE::Session->create(
 
 $poe_kernel->run();
 
-sub nagle(*;$) {
+sub nagle(*;$)
+{
     my $fh = shift;
     if (shift) {
         setsockopt( $fh, IPPROTO_TCP, TCP_NODELAY, 0 )
@@ -513,12 +527,14 @@ sub nagle(*;$) {
     }
 }
 
-sub doReadWrite {
+
+sub doReadWrite
+{
     my $readWrite     = shift;
     my $put           = shift;
     my $error_handler = shift;
-    if (
-        defined($readWrite)
+
+    if (defined($readWrite)
         && (   ( ref($readWrite) eq "POE::Wheel::ReadWrite" )
             || ( ref($readWrite) eq "POE::Wheel::UDP" ) )
       )
@@ -535,7 +551,8 @@ sub doReadWrite {
     return 0;
 }
 
-sub printDebug {
+sub printDebug
+{
     print "\n" . join(
         "\t",
         map {
