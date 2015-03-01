@@ -242,34 +242,34 @@ sub doIf
     }
 }
 
+# creates a new POE Session
 sub startUDPSocket
 {
     my $link = shift;
     my $con  = $config->{links}->{$link};
 
-    #die "No curip: ".$con->{curip} unless $con->{curip};
-    print "Starting "
+    print( "Starting "
       . $link
       . " with source='"
       . $con->{curip} . "':"
       . $con->{srcport}
       . " and dst="
       . ( $con->{dstip}   || "-" ) . ":"
-      . ( $con->{dstport} || "-" ) . "\n";
+      . ( $con->{dstport} || "-" ) . "\n" );
+
     POE::Session->create(
         inline_states => {
             _start => sub {
-                my ( $kernel, $heap, $session, $con ) =
-                  @_[ KERNEL, HEAP, SESSION, ARG0 ];
+                my ( $kernel, $heap, $session, $con ) = @_[ KERNEL, HEAP, SESSION, ARG0 ];
                 $heap->{con} = $con;
+
                 my $bind  = ( $con->{options} =~ m,bind,i )  ? 1 : 0;
                 my $reuse = ( $con->{options} =~ m,reuse,i ) ? 1 : 0;
-                print "Bind: "
-                  . $bind
-                  . " Reuse:"
-                  . $reuse . " "
+                
+                print( "Bind: " . $bind . " Reuse:" . $reuse . " "
                   . ( $con->{dstip}   || "-" ) . ":"
-                  . ( $con->{dstport} || "-" ) . "\n";
+                  . ( $con->{dstport} || "-" ) . "\n" );
+
                 eval {
                     $heap->{udp} = new IO::Socket::INET(
                         PeerAddr => $bind ? $con->{dstip}   : undef,
@@ -282,6 +282,7 @@ sub startUDPSocket
                         Proto => 'udp',
                     ) or die "ERROR in Socket Creation : $!\n";
                 };
+
                 if ($@) {
                     print "Not possible: " . $@ . "\n";
                     return;
@@ -310,9 +311,9 @@ sub startUDPSocket
                           . " not worked!\n";
                     }
                 }
+
                 $con->{cursession} = $heap->{sessionid};
 
-                #sleep(10);
             },
             _stop => sub {
                 my ( $kernel, $heap, $session ) = @_[ KERNEL, HEAP, SESSION ];
@@ -491,6 +492,13 @@ POE::Session->create(
     },
 );
 
+
+# simplified explanation of this session:
+# (_start is triggered by creation of this session therefore
+# directly "here" before kernel->run() )
+# when handling the   **start** event   :
+## doing a lot of stuff with ifconfig and iptables
+## possibly setting an interface and corresponding rules
 POE::Session->create(
     inline_states => {
         _start => sub {
@@ -523,7 +531,7 @@ POE::Session->create(
                       . $config->{local}->{mask}
                       . " up" );
             }
-            else {    # if not do something strange with bridge interfaces
+            else {    # if not do something obscure with bridge interfaces
                 system( "ifconfig " . $heap->{interface} . " up" );
                 system( "brctl", "addif", $config->{local}->{ip}, $heap->{interface} );
             }
@@ -550,8 +558,13 @@ POE::Session->create(
         },
         got_input => sub {
             my ( $kernel, $heap, $socket ) = @_[ KERNEL, HEAP, ARG0 ];
-            die if ( $socket != $heap->{fh} );
-            while ( sysread( $heap->{fh}, my $buf = "", TUN_MAX_FRAME ) ) {
+            
+            if ( $socket != $heap->{fh} ) {
+                die();
+            }
+            
+            while ( sysread( $heap->{fh}, my $buf = "", TUN_MAX_FRAME ) )
+            {
                 foreach my $sessid (
                     sort {
                         ( $sessions->{$a}->{tried} || 0 )
