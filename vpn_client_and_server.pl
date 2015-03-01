@@ -6,7 +6,8 @@ use warnings;
 
 use POE;
 use POE::Wheel::UDP;
-use POE qw(Component::Server::TCP Component::Client::TCP Filter::Block Filter::Stream);
+use POE
+  qw(Component::Server::TCP Component::Client::TCP Filter::Block Filter::Stream);
 
 use IO::File;
 use IO::Interface::Simple;
@@ -17,16 +18,15 @@ use Socket qw(IPPROTO_TCP TCP_NODELAY);
 use Time::HiRes qw/gettimeofday tv_interval/;
 use MIME::Base64;
 
-
 # Constants
 use constant TUN_MAX_FRAME => 4096;
+
 # Ioctl defines
 use constant TUNSETNOCSUM  => 0x400454c8;
 use constant TUNSETDEBUG   => 0x400454c9;
 use constant TUNSETIFF     => 0x400454ca;
 use constant TUNSETPERSIST => 0x400454cb;
 use constant TUNSETOWNER   => 0x400454cc;
-
 
 # TUNSETIFF ifr flags
 use constant IFF_TUN       => 0x0001;
@@ -38,8 +38,6 @@ use constant TUN_PKT_STRIP => 0x0001;
 use constant STRUCT_IFREQ  => 'Z16 s';
 use constant TUNNEL_DEVICE => '/dev/net/tun';
 
-
-
 # Variables
 my $sessions   = {};
 my $doCrypt    = 0;
@@ -47,7 +45,7 @@ my $doPrepend  = undef;    # "abcdefghikjlmnopqrstuvwxyz";
 my $doBase64   = 0;
 my $printdebug = 0;
 
-$| = 1; # disable terminal output buffering
+$| = 1;                    # disable terminal output buffering
 my $looktime   = 5;
 my $nodeadpeer = 0;
 my $debug      = 0;
@@ -58,6 +56,7 @@ my $tuntapsession = undef;
 my $config   = {};
 my $seen     = {};
 my $lastseen = {};
+
 
 
 # open config file
@@ -116,8 +115,7 @@ while (<CONFIG>)
 close(CONFIG);
 
 
-sub fetchIPs
-{
+sub fetchIPs {
     foreach my $curlink ( keys %{ $config->{links} } ) {
         my $newsrcaddress = '';
         if ( my $curif =
@@ -128,7 +126,9 @@ sub fetchIPs
         else {
             $newsrcaddress = $config->{links}->{$curlink}->{src};
         }
+
         my $restart = 0;
+
         if ( $newsrcaddress
             && ( $config->{links}->{$curlink}->{curip} ne $newsrcaddress ) )
         {
@@ -138,11 +138,6 @@ sub fetchIPs
             $restart++;
         }
 
-#if ($config->{links}->{$curlink}->{lastdstip} ne $config->{links}->{$curlink}->{curdstip}) {
-#   $config->{links}->{$curlink}->{curdstip} = $config->{links}->{$curlink}->{lastdstip};
-#   print "DST Change for ".$config->{links}->{$curlink}->{src}." !\n";
-#   $restart++;
-#}
         if ($restart) {
             $poe_kernel->call(
                 $config->{links}->{$curlink}->{cursession} => "terminate" )
@@ -198,9 +193,7 @@ POE::Session->create(
     },
 );
 
-
-sub doIf
-{
+sub doIf {
     my $up = shift;
     foreach my $curroute ( @{ $config->{route} } ) {
         my $tmp =
@@ -210,8 +203,8 @@ sub doIf
           . (
             defined( $curroute->{metric} )
             ? " metric " . $curroute->{metric}
-            : "" )
-          . ( $curroute->{table} ? " table " . $curroute->{table} : "" );
+            : ""
+          ) . ( $curroute->{table} ? " table " . $curroute->{table} : "" );
         print $tmp. "\n";
         system($tmp);
         $tmp =
@@ -223,15 +216,14 @@ sub doIf
           . (
             defined( $curroute->{metric} )
             ? " metric " . $curroute->{metric}
-            : "" )
-          . ( $curroute->{table} ? " table " . $curroute->{table} : "" );
+            : ""
+          ) . ( $curroute->{table} ? " table " . $curroute->{table} : "" );
         print $tmp. "\n";
         system($tmp);
     }
 }
 
-sub startUDPSocket
-{
+sub startUDPSocket {
     my $link = shift;
     my $con  = $config->{links}->{$link};
 
@@ -519,8 +511,7 @@ POE::Session->create(
 
 $poe_kernel->run();
 
-sub nagle(*;$)
-{
+sub nagle(*;$) {
     my $fh = shift;
     if (shift) {
         setsockopt( $fh, IPPROTO_TCP, TCP_NODELAY, 0 )
@@ -532,14 +523,13 @@ sub nagle(*;$)
     }
 }
 
-
-sub doReadWrite
-{
+sub doReadWrite {
     my $readWrite     = shift;
     my $put           = shift;
     my $error_handler = shift;
 
-    if (defined($readWrite)
+    if (
+        defined($readWrite)
         && (   ( ref($readWrite) eq "POE::Wheel::ReadWrite" )
             || ( ref($readWrite) eq "POE::Wheel::UDP" ) )
       )
@@ -556,8 +546,7 @@ sub doReadWrite
     return 0;
 }
 
-sub printDebug
-{
+sub printDebug {
     print "\n" . join(
         "\t",
         map {
