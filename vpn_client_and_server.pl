@@ -165,6 +165,7 @@ sub printDebug
     ) . "\n";
 }
 
+# eventually calls startUDPSocket()
 sub fetchIPs
 {
     foreach my $curlink ( keys %{ $config->{links} } )
@@ -175,7 +176,8 @@ sub fetchIPs
         {
             $new_src_address = $curif->address();
         }
-        else {
+        else
+        {
             $new_src_address = $config->{links}->{$curlink}->{src};
         }
 
