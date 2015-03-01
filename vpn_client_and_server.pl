@@ -1,4 +1,6 @@
-#!/usr/bin/perl -w
+#!/usr/bin/env perl
+
+# Includes
 use strict;
 use warnings;
 
@@ -16,28 +18,15 @@ use Time::HiRes qw/gettimeofday tv_interval/;
 use MIME::Base64;
 
 
-my $sessions   = {};
-my $doCrypt    = 0;
-my $doPrepend  = undef;    # "abcdefghikjlmnopqrstuvwxyz";
-my $doBase64   = 0;
-my $printdebug = 0;
-
-$| = 1;
-my $looktime   = 5;
-my $nodeadpeer = 0;
-my $debug      = 0;
-my $up         = 0;
-
-#my $MEXRETRYRESEND = 20;
-
+# Constants
 use constant TUN_MAX_FRAME => 4096;
-
 # Ioctl defines
 use constant TUNSETNOCSUM  => 0x400454c8;
 use constant TUNSETDEBUG   => 0x400454c9;
 use constant TUNSETIFF     => 0x400454ca;
 use constant TUNSETPERSIST => 0x400454cb;
 use constant TUNSETOWNER   => 0x400454cc;
+
 
 # TUNSETIFF ifr flags
 use constant IFF_TUN       => 0x0001;
@@ -49,11 +38,27 @@ use constant TUN_PKT_STRIP => 0x0001;
 use constant STRUCT_IFREQ  => 'Z16 s';
 use constant TUNNEL_DEVICE => '/dev/net/tun';
 
+
+
+# Variables
+my $sessions   = {};
+my $doCrypt    = 0;
+my $doPrepend  = undef;    # "abcdefghikjlmnopqrstuvwxyz";
+my $doBase64   = 0;
+my $printdebug = 0;
+
+$| = 1; # disable terminal output buffering
+my $looktime   = 5;
+my $nodeadpeer = 0;
+my $debug      = 0;
+my $up         = 0;
+
 my $tuntapsession = undef;
 
 my $config   = {};
 my $seen     = {};
 my $lastseen = {};
+
 
 # open config file
 open( CONFIG, "<", $ARGV[0] || "/etc/multivpn.cfg" )
