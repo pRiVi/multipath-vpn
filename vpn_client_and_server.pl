@@ -114,7 +114,59 @@ while (<CONFIG>)
 close(CONFIG);
 
 
-sub fetchIPs {
+sub nagle(*;$)
+{
+    my $fh = shift;
+    if (shift) {
+        setsockopt( $fh, IPPROTO_TCP, TCP_NODELAY, 0 )
+          || print "Couldn't enable Nagle's algorithm: $!\n";
+    }
+    else {
+        setsockopt( $fh, IPPROTO_TCP, TCP_NODELAY, 1 )
+          || print "Couldn't disable Nagle's algorithm: $!\n";
+    }
+}
+
+sub doReadWrite
+{
+    my $readWrite     = shift;
+    my $put           = shift;
+    my $error_handler = shift;
+
+    if (
+        defined($readWrite)
+        && (   ( ref($readWrite) eq "POE::Wheel::ReadWrite" )
+            || ( ref($readWrite) eq "POE::Wheel::UDP" ) )
+      )
+    {
+        $readWrite->put($put)
+          && $error_handler
+          && $poe_kernel->yield($error_handler)
+          if $put;
+        return 1;
+    }
+    else {
+        print "Not a ReadWrite: " . ref($readWrite) . "\n";
+    }
+    return 0;
+}
+
+sub printDebug
+{
+    print "\n" . join(
+        "\t",
+        map {
+                $_ . "="
+              . ( $sessions->{$_}->{high}        || "-" ) . "("
+              . ( $sessions->{$_}->{outcount}    || "-" ) . "/" . ""
+              . ( $sessions->{$_}->{curoutcount} || "-" ) . "/" . ""
+              . ( $sessions->{$_}->{tried}       || "-" ) . ")"
+        } keys %$sessions
+    ) . "\n";
+}
+
+sub fetchIPs
+{
     foreach my $curlink ( keys %{ $config->{links} } )
     {
         my $new_src_address = '';
@@ -158,44 +210,6 @@ sub fetchIPs {
     }
 }
 
-POE::Session->create(
-    inline_states => {
-        _start => sub {
-            my ( $kernel, $heap ) = @_[ KERNEL, HEAP ];
-            $kernel->yield("loop");
-        },
-        loop => sub {
-            my ( $kernel, $heap ) = @_[ KERNEL, HEAP ];
-            fetchIPs();
-            $kernel->delay( loop => 1 );
-        },
-    },
-);
-
-POE::Session->create(
-    inline_states => {
-        _start => sub {
-            my ( $kernel, $heap ) = @_[ KERNEL, HEAP ];
-            $kernel->yield("loop");
-        },
-        loop => sub {
-            my ( $kernel, $heap ) = @_[ KERNEL, HEAP ];
-            $lastseen = $seen;
-            if ( scalar( grep { $lastseen->{$_} } keys %$lastseen ) ) {
-                doIf(1) unless $up;
-                $up++;
-            }
-            else {
-                doIf(0) if $up;
-                $up = 0;
-            }
-            $seen = {};
-            $kernel->delay( loop => 5 );
-        },
-    },
-);
-
-
 sub doIf
 {
     my $up = shift;
@@ -228,7 +242,8 @@ sub doIf
     }
 }
 
-sub startUDPSocket {
+sub startUDPSocket
+{
     my $link = shift;
     my $con  = $config->{links}->{$link};
 
@@ -433,6 +448,44 @@ sub startUDPSocket {
     );
 }
 
+
+POE::Session->create(
+    inline_states => {
+        _start => sub {
+            my ( $kernel, $heap ) = @_[ KERNEL, HEAP ];
+            $kernel->yield("loop");
+        },
+        loop => sub {
+            my ( $kernel, $heap ) = @_[ KERNEL, HEAP ];
+            fetchIPs();
+            $kernel->delay( loop => 1 );
+        },
+    },
+);
+
+POE::Session->create(
+    inline_states => {
+        _start => sub {
+            my ( $kernel, $heap ) = @_[ KERNEL, HEAP ];
+            $kernel->yield("loop");
+        },
+        loop => sub {
+            my ( $kernel, $heap ) = @_[ KERNEL, HEAP ];
+            $lastseen = $seen;
+            if ( scalar( grep { $lastseen->{$_} } keys %$lastseen ) ) {
+                doIf(1) unless $up;
+                $up++;
+            }
+            else {
+                doIf(0) if $up;
+                $up = 0;
+            }
+            $seen = {};
+            $kernel->delay( loop => 5 );
+        },
+    },
+);
+
 POE::Session->create(
     inline_states => {
         _start => sub {
@@ -513,50 +566,3 @@ POE::Session->create(
 
 $poe_kernel->run();
 
-sub nagle(*;$) {
-    my $fh = shift;
-    if (shift) {
-        setsockopt( $fh, IPPROTO_TCP, TCP_NODELAY, 0 )
-          || print "Couldn't enable Nagle's algorithm: $!\n";
-    }
-    else {
-        setsockopt( $fh, IPPROTO_TCP, TCP_NODELAY, 1 )
-          || print "Couldn't disable Nagle's algorithm: $!\n";
-    }
-}
-
-sub doReadWrite {
-    my $readWrite     = shift;
-    my $put           = shift;
-    my $error_handler = shift;
-
-    if (
-        defined($readWrite)
-        && (   ( ref($readWrite) eq "POE::Wheel::ReadWrite" )
-            || ( ref($readWrite) eq "POE::Wheel::UDP" ) )
-      )
-    {
-        $readWrite->put($put)
-          && $error_handler
-          && $poe_kernel->yield($error_handler)
-          if $put;
-        return 1;
-    }
-    else {
-        print "Not a ReadWrite: " . ref($readWrite) . "\n";
-    }
-    return 0;
-}
-
-sub printDebug {
-    print "\n" . join(
-        "\t",
-        map {
-                $_ . "="
-              . ( $sessions->{$_}->{high}        || "-" ) . "("
-              . ( $sessions->{$_}->{outcount}    || "-" ) . "/" . ""
-              . ( $sessions->{$_}->{curoutcount} || "-" ) . "/" . ""
-              . ( $sessions->{$_}->{tried}       || "-" ) . ")"
-        } keys %$sessions
-    ) . "\n";
-}
