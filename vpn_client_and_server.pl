@@ -449,6 +449,8 @@ sub startUDPSocket
 }
 
 
+# simplified explanation of this Session:
+# starts a loop after creation which calls fetchIPs() every second
 POE::Session->create(
     inline_states => {
         _start => sub {
@@ -463,6 +465,8 @@ POE::Session->create(
     },
 );
 
+# simplified explanation of this Session:
+# starts a loop after creation which calls doIF() all 5 seconds
 POE::Session->create(
     inline_states => {
         _start => sub {
@@ -472,7 +476,8 @@ POE::Session->create(
         loop => sub {
             my ( $kernel, $heap ) = @_[ KERNEL, HEAP ];
             $lastseen = $seen;
-            if ( scalar( grep { $lastseen->{$_} } keys %$lastseen ) ) {
+            if ( scalar( grep( $lastseen->{$_}, keys(%$lastseen)) ) )
+            {
                 doIf(1) unless $up;
                 $up++;
             }
@@ -490,44 +495,56 @@ POE::Session->create(
     inline_states => {
         _start => sub {
             my ( $kernel, $heap ) = @_[ KERNEL, HEAP ];
+
             my $dotun =
               (      ( $config->{local}->{ip} =~ m,^[\d\.]+$, )
                   && ( $config->{local}->{options} !~ m,tap, ) ) ? 1 : 0;
+
             $heap->{fh} = new IO::File( TUNNEL_DEVICE, 'r+' )
               or die "Can't open " . TUNNEL_DEVICE . ": $!";
+
             $heap->{ifr} = pack( STRUCT_IFREQ,
                 $dotun ? 'tun%d' : 'tap%d',
                 $dotun ? IFF_TUN : IFF_TAP );
+
             ioctl $heap->{fh}, TUNSETIFF, $heap->{ifr}
               or die "Can't ioctl() tunnel: $!";
+
             $heap->{interface} = unpack STRUCT_IFREQ, $heap->{ifr};
+
             print "Interface " . $heap->{interface} . " up!\n";
-            if ( $config->{local}->{ip} =~ m,^[\d\.]+$, ) {
+            
+                  # regex check if the configured ip is an ip 
+            if ( $config->{local}->{ip} =~ /^[\d\.]+$/ )
+            {
                 system( "ifconfig "
                       . $heap->{interface} . " "
                       . $config->{local}->{ip} . "/"
                       . $config->{local}->{mask}
                       . " up" );
             }
-            else {
+            else {    # if not do something strange with bridge interfaces
                 system( "ifconfig " . $heap->{interface} . " up" );
-                system( "brctl", "addif", $config->{local}->{ip},
-                    $heap->{interface} );
+                system( "brctl", "addif", $config->{local}->{ip}, $heap->{interface} );
             }
-            system( "ifconfig "
+
+            if (( $config->{local}->{dstip} )) { 
+                system( "ifconfig "
                   . $heap->{interface}
                   . " dstaddr "
-                  . $config->{local}->{dstip} )
-              if ( $config->{local}->{dstip} );
-            system( "iptables -A FORWARD -o "
+                  . $config->{local}->{dstip} );
+            }
+
+            if (( $config->{local}->{mtu} )) { 
+                system( "iptables -A FORWARD -o "
                   . $heap->{interface}
                   . " -p tcp -m tcp --tcp-flags SYN,RST SYN -m tcpmss --mss "
                   . ( $config->{local}->{mtu} - 40 )
-                  . ":65495 -j TCPMSS --clamp-mss-to-pmtu" )
-              if ( $config->{local}->{mtu} );
-            system( "ifconfig "
-                  . $heap->{interface} . " mtu "
-                  . $config->{local}->{mtu} );
+                  . ":65495 -j TCPMSS --clamp-mss-to-pmtu" );
+            }
+
+            system( "ifconfig " . $heap->{interface} . " mtu " . $config->{local}->{mtu} );
+
             $kernel->select_read( $heap->{fh}, "got_input" );
             $tuntapsession = $_[SESSION];
         },
@@ -565,4 +582,3 @@ POE::Session->create(
 );
 
 $poe_kernel->run();
-
