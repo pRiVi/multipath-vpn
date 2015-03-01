@@ -79,7 +79,6 @@ while (<CONFIG>)
             dstport => $config[5] || undef,
             factor  => $config[6],
 
-            #curdstip => $config[4] || undef,
             lastdstip => $config[4] || undef,
             options   => $config[7] || "",
             curip     => "",
@@ -116,42 +115,45 @@ close(CONFIG);
 
 
 sub fetchIPs {
-    foreach my $curlink ( keys %{ $config->{links} } ) {
-        my $newsrcaddress = '';
+    foreach my $curlink ( keys %{ $config->{links} } )
+    {
+        my $new_src_address = '';
         if ( my $curif =
             IO::Interface::Simple->new( $config->{links}->{$curlink}->{src} ) )
         {
-            $newsrcaddress = $curif->address();
+            $new_src_address = $curif->address();
         }
         else {
-            $newsrcaddress = $config->{links}->{$curlink}->{src};
+            $new_src_address = $config->{links}->{$curlink}->{src};
         }
 
         my $restart = 0;
 
-        if ( $newsrcaddress
-            && ( $config->{links}->{$curlink}->{curip} ne $newsrcaddress ) )
+        if ( $new_src_address
+            && ( $config->{links}->{$curlink}->{curip} ne $new_src_address ) )
         {
-            $config->{links}->{$curlink}->{curip} = $newsrcaddress;
-            print "IP Change for "
-              . $config->{links}->{$curlink}->{src} . " !\n";
+            $config->{links}->{$curlink}->{curip} = $new_src_address;
+            print("IP Change for " . $config->{links}->{$curlink}->{src} . " !\n");
+
             $restart++;
         }
 
         if ($restart) {
-            $poe_kernel->call(
-                $config->{links}->{$curlink}->{cursession} => "terminate" )
-              if $config->{links}->{$curlink}->{cursession};
+            if ($config->{links}->{$curlink}->{cursession}) { 
+                $poe_kernel->call($config->{links}->{$curlink}->{cursession} => "terminate" );
+            }
             startUDPSocket($curlink);
         }
         else {
-            $poe_kernel->post(
-                $config->{links}->{$curlink}->{cursession} => "Send" => "SES:"
-                  . $curlink . ":"
-                  . join( ",", keys %$lastseen ) )
-              if $config->{links}->{$curlink}->{cursession}
+            if ( $config->{links}->{$curlink}->{cursession}
               && ( $config->{links}->{$curlink}->{dstip}
-                || $config->{links}->{$curlink}->{lastdstip} );
+                || $config->{links}->{$curlink}->{lastdstip} ))
+            { 
+                $poe_kernel->post(
+                    $config->{links}->{$curlink}->{cursession} => "Send" => "SES:"
+                        . $curlink . ":"
+                        . join( ",", keys %$lastseen ) );
+            }
         }
     }
 }
@@ -193,9 +195,12 @@ POE::Session->create(
     },
 );
 
-sub doIf {
+
+sub doIf
+{
     my $up = shift;
-    foreach my $curroute ( @{ $config->{route} } ) {
+    foreach my $curroute ( @{ $config->{route} } )
+    {
         my $tmp =
             "ip route delete "
           . $curroute->{to} . "/"
@@ -218,7 +223,7 @@ sub doIf {
             ? " metric " . $curroute->{metric}
             : ""
           ) . ( $curroute->{table} ? " table " . $curroute->{table} : "" );
-        print $tmp. "\n";
+        print( $tmp . "\n" );
         system($tmp);
     }
 }
@@ -302,7 +307,6 @@ sub startUDPSocket {
             input => sub {
                 my ( $kernel, $heap, $session ) = @_[ KERNEL, HEAP, SESSION ];
 
-                #print $input."\n";
                 my $curinput = undef;
                 while ( defined( $heap->{udp}->recv( $curinput, 1600 ) ) ) {
                     $heap->{con}->{lastdstip}   = $heap->{udp}->peerhost();
@@ -323,10 +327,8 @@ sub startUDPSocket {
                     }
                     if ($doBase64) {
 
-            #print "PRE:".join(",", map { ord($_ ) } split(//, $curinput))."\n";
                         $curinput = decode_base64($curinput);
 
-           #print "POST:".join(",", map { ord($_ ) } split(//, $curinput))."\n";
                     }
                     if ( !$nodeadpeer
                         && ( substr( $curinput, 0, 4 ) eq "SES:" ) )
