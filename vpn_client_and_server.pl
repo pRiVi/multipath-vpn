@@ -66,11 +66,14 @@ open( CONFIG, "<", $ARGV[0] || "/etc/multivpn.cfg" )
 # read and parse config file
 while (<CONFIG>)
 {
-    chomp;
+    chomp($_);
     s,\#.*$,,gi;
     next if m,^\s*$,;
+
     my @config = split( /\t/, $_ );
-    if ( $config[0] && ( lc( $config[0] ) eq "link" ) ) {
+
+    if ( $config[0] && ( lc( $config[0] ) eq "link" ) )
+    {
         $config->{links}->{ $config[1] } = {
             name    => $config[1],
             src     => $config[2],
@@ -86,24 +89,23 @@ while (<CONFIG>)
     }
     elsif ( $config[0] && ( lc( $config[0] ) eq "local" ) ) {
         $config->{local} = {
-            ip      => $config[1],
-            mask    => $config[2] || 24,
-            mtu     => $config[3] || 1300,
-            dstip   => $config[4],
-            options => $config[5],
+            ip             => $config[1],
+            subnet_size    => $config[2] || 24,
+            mtu            => $config[3] || 1300,
+            dstip          => $config[4],
+            options        => $config[5],
         };
     }
     elsif ( $config[0] && ( lc( $config[0] ) eq "route" ) ) {
         push(
             @{ $config->{route} },
             {
-                to     => $config[1],
-                mask   => $config[2],
-                gw     => $config[3],
-                table  => $config[4],
-                metric => $config[5],
-            }
-        );
+                to            => $config[1],
+                subnet_size   => $config[2],
+                gw            => $config[3],
+                table         => $config[4],
+                metric        => $config[5],
+            });
     }
     elsif (m,^\s*$,) {
     }
@@ -165,6 +167,13 @@ sub printDebug
     ) . "\n";
 }
 
+=pod
+
+=head2 fetchIPs()
+
+
+=cut
+
 # eventually calls startUDPSocket()
 sub fetchIPs
 {
@@ -212,39 +221,55 @@ sub fetchIPs
     }
 }
 
-sub doIf
+=pod
+
+=head2 reset_routing_table( I<$up> )
+
+Resets all routing table entries made by this programm.
+
+If called with parameter I<1> delete and set them again(acording to conf file).
+
+If called with parameter I<0> delete them.
+
+=cut
+
+sub reset_routing_table
 {
     my $up = shift;
+    
     foreach my $curroute ( @{ $config->{route} } )
     {
         my $tmp =
             "ip route delete "
           . $curroute->{to} . "/"
-          . $curroute->{mask}
+          . $curroute->{subnet_size}
           . (
             defined( $curroute->{metric} )
             ? " metric " . $curroute->{metric}
             : ""
           ) . ( $curroute->{table} ? " table " . $curroute->{table} : "" );
-        print $tmp. "\n";
+        
+        print( $tmp. "\n");
         system($tmp);
+
         $tmp =
             "ip route "
           . ( $up ? "add" : "delete" ) . " "
           . $curroute->{to} . "/"
-          . $curroute->{mask} . " via "
+          . $curroute->{subnet_size} . " via "
           . $curroute->{gw}
           . (
             defined( $curroute->{metric} )
             ? " metric " . $curroute->{metric}
             : ""
           ) . ( $curroute->{table} ? " table " . $curroute->{table} : "" );
+
         print( $tmp . "\n" );
         system($tmp);
     }
 }
 
-# creates a new POE Session
+# creates a new POE Session and does some other things
 sub startUDPSocket
 {
     my $link = shift;
@@ -454,6 +479,8 @@ sub startUDPSocket
 
 # simplified explanation of this Session:
 # starts a loop after creation which calls fetchIPs() every second
+# which updates all variables and session if the local IP
+# (or the destination) ip changes
 POE::Session->create(
     inline_states => {
         _start => sub {
@@ -469,7 +496,9 @@ POE::Session->create(
 );
 
 # simplified explanation of this Session:
-# starts a loop after creation which calls doIF() all 5 seconds
+# this Sessions executes loop all 5 seconds and checks if the used
+# connections are reachable.(Using the $seen and $lastseen variables)
+# If not, it takes the interface down (using reset_routing_table() ).
 POE::Session->create(
     inline_states => {
         _start => sub {
@@ -478,16 +507,23 @@ POE::Session->create(
         },
         loop => sub {
             my ( $kernel, $heap ) = @_[ KERNEL, HEAP ];
+
             $lastseen = $seen;
+
             if ( scalar( grep( $lastseen->{$_}, keys(%$lastseen)) ) )
             {
-                doIf(1) unless $up;
+                unless ($up) {
+                    reset_routing_table(1);
+                }
                 $up++;
             }
             else {
-                doIf(0) if $up;
+                if ($up) {
+                    reset_routing_table(0);
+                }
                 $up = 0;
             }
+
             $seen = {};
             $kernel->delay( loop => 5 );
         },
@@ -507,8 +543,8 @@ POE::Session->create(
             my ( $kernel, $heap ) = @_[ KERNEL, HEAP ];
 
             my $dotun =
-              (      ( $config->{local}->{ip} =~ m,^[\d\.]+$, )
-                  && ( $config->{local}->{options} !~ m,tap, ) ) ? 1 : 0;
+              (      ( $config->{local}->{ip} =~ /^[\d\.]+$/ )
+                  && ( $config->{local}->{options} !~ /tap/ ) ) ? 1 : 0;
 
             $heap->{fh} = new IO::File( TUNNEL_DEVICE, 'r+' )
               or die "Can't open " . TUNNEL_DEVICE . ": $!";
@@ -522,7 +558,7 @@ POE::Session->create(
 
             $heap->{interface} = unpack STRUCT_IFREQ, $heap->{ifr};
 
-            print "Interface " . $heap->{interface} . " up!\n";
+            print( "Interface " . $heap->{interface} . " up!\n");
             
                   # regex check if the configured ip is an ip 
             if ( $config->{local}->{ip} =~ /^[\d\.]+$/ )
@@ -530,7 +566,7 @@ POE::Session->create(
                 system( "ifconfig "
                       . $heap->{interface} . " "
                       . $config->{local}->{ip} . "/"
-                      . $config->{local}->{mask}
+                      . $config->{local}->{subnet_size}
                       . " up" );
             }
             else {    # if not do something obscure with bridge interfaces
@@ -568,18 +604,20 @@ POE::Session->create(
             while ( sysread( $heap->{fh}, my $buf = "", TUN_MAX_FRAME ) )
             {
                 foreach my $sessid (
-                    sort {
-                        ( $sessions->{$a}->{tried} || 0 )
-                          <=> ( $sessions->{$b}->{tried} || 0 )
-                    } keys %$sessions
+                    sort( {( $sessions->{$a}->{tried} || 0 )
+                          <=> ( $sessions->{$b}->{tried} || 0 ) }
+                      keys( %$sessions))
                   )
                 {
-                    $sessions->{$sessid}->{tried} +=
-                      ( 1 / $sessions->{$sessid}->{factor} )
-                      if $sessions->{$sessid}->{factor};
-                    next
-                      unless ( $nodeadpeer
-                        || $sessions->{$sessid}->{con}->{active} );
+                    if ($sessions->{$sessid}->{factor})
+                    { 
+                        $sessions->{$sessid}->{tried} += ( 1 / $sessions->{$sessid}->{factor} );
+                    }
+                    unless ( $nodeadpeer || $sessions->{$sessid}->{con}->{active} )
+                    { 
+                        next;
+                    }
+
                     $_[KERNEL]->call( $sessid => "Send" => $buf );
                     last;
                 }
@@ -588,10 +626,11 @@ POE::Session->create(
         data => sub {
             my ( $kernel, $heap, $buf ) = @_[ KERNEL, HEAP, ARG0 ];
             my $size = syswrite( $heap->{fh}, $buf );
-            print $size. " != " . length($buf) . "\n"
 
-              #die $size." != ".length($buf)
-              unless ( $size == length($buf) );
+            unless (( $size == length($buf) ))
+            { 
+                print $size . " != " . length($buf) . "\n";
+            }
         },
     }
 );
