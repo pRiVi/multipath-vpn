@@ -1,5 +1,70 @@
 #!/usr/bin/env perl
 
+
+=pod
+
+=head1 NAME
+
+Multipath VPN
+
+=head1 Technical Overview
+
+Multipath VPN is implemented without threads using 1 process and several Sessions.
+Sessions are roughly comparable to event loops (see the POE doc for details).
+
+At any point in time the I<number of event loops> in Multipath VPN is constant
+and calulated as follows:
+
+I<3> + B<n> ; with B<n> = I<Number of paths/links to Server>
+
+The following section explains how this formula is combined and what exactly these
+Sessions do.
+
+=head2 The Sessions
+
+The I<name tags> used here are also labled in the source code. In the comments above
+every B<POE::Session-E<gt>create(> line.
+
+
+=head3 [Local IP Check Session]
+
+This Session is created B<at startup> exists permanentely and is I<unique> for one running instance of multipath vpn.
+Once a seconds it calls I<detect+handle_local_ip_change()>.
+The sessions purpose is to ensure multipath vpn continues working even if
+interface IP address changes (of server or client both are handled) happen.
+
+=head3 [Target Reachability Check (TRC) Session]
+
+This Session is created B<at startup> exists permanentely and is I<unique> for one running instance of multipath vpn.
+Every five seconds it checks if the server is reachable via all configured links.
+If one goes down he deconfigures the corresponding interface.
+This session keeps checking if the target is reachable, if it is reachable again,
+the connection will be reestablished.
+To achive this all 5 seconds it calls I<reset_routing_table()> if needed.
+
+=head3 [Receiver Session]
+
+This Session is created B<at startup> exists permanentely and is I<unique> for one running instance of multipath vpn.
+Running on one node recieving and accepting the multipath-vpn tunnel packets from the other node.
+This session also is responsible for unpacking the contained packets and forwarding it to the clients in the local net.
+The session also creates the tun/tap interface when it is created.
+
+=head3 [Sender Session]
+
+One Instance of Session is B<unique for for every UDP Socket> (which is unique for every link). Therefore I<several instances>
+of this session can exist and this is the non-static B<n> in the formula above.
+It handles all events corresponding to sending packets to other Multipath VPN nodes.
+Therefore this sessions takes TCP/UDP packets from the tun/tap interface, wraps them into UDP
+and delivers them to the other multipath VPN node configured in the conf file.
+
+=head1 Doc of some Functions:
+
+=cut
+
+
+
+
+
 # Includes
 use strict;
 use warnings;
@@ -63,12 +128,12 @@ my $lastseen = {};
 open( CONFIG, "<", $ARGV[0] || "/etc/multivpn.cfg" )
   || die "Config not found: " . $!;
 
-# read and parse config file
+# read and parse config file (linewise)
 while (<CONFIG>)
 {
     chomp($_);
-    s,\#.*$,,gi;
-    next if m,^\s*$,;
+    s/\#.*$//gi;      # delete all comments
+    next if m,^\s*$,; # next if we're in a now deleted line
 
     my @config = split( /\t/, $_ );
 
@@ -169,13 +234,30 @@ sub printDebug
 
 =pod
 
-=head2 fetchIPs()
+=head2 detect+handle_local_ip_change()
 
+Detects ip changes of the local network interfaces used for listening for or connecting to another
+multipath vpn instance.
+This can handle a server changing his ip (will then rebuild his connection to the clients and update them).
+as well as a ip change of a client (after all there is no strict server client distinction in the multipath vpn
+model, there are just node communicating).
+If a IP change is detected the following is done:
+
+=over
+
+=item 1. It write's a message to the controling terminal
+
+=item 2. The sessions using the old interface are killed
+
+=item 2. It starts a new UDP socket on the new interface ( I<using startUDPSocket()> )
+
+=item 2. All the sessions are re-established 
+
+=back
 
 =cut
 
-# eventually calls startUDPSocket()
-sub fetchIPs
+sub detect+handle_local_ip_change
 {
     foreach my $curlink ( keys %{ $config->{links} } )
     {
@@ -227,9 +309,13 @@ sub fetchIPs
 
 Resets all routing table entries made by this programm.
 
-If called with parameter I<1> delete and set them again(acording to conf file).
+=over
 
-If called with parameter I<0> delete them.
+=item If called with parameter I<1> delete and set them again(acording to conf file).
+
+=item If called with parameter I<0> delete them.
+
+=back
 
 =cut
 
@@ -275,15 +361,12 @@ sub startUDPSocket
     my $link = shift;
     my $con  = $config->{links}->{$link};
 
-    print( "Starting "
-      . $link
-      . " with source='"
-      . $con->{curip} . "':"
-      . $con->{srcport}
-      . " and dst="
-      . ( $con->{dstip}   || "-" ) . ":"
-      . ( $con->{dstport} || "-" ) . "\n" );
+    print( "Starting " . $link
+      . " with source='" . $con->{curip} . "':" . $con->{srcport}
+      . " and dst=" . ( $con->{dstip}   || "-" ) . ":" . ( $con->{dstport} || "-" ) . "\n" );
 
+    # [Sender Session]
+    # unique for each link
     POE::Session->create(
         inline_states => {
             _start => sub {
@@ -305,7 +388,6 @@ sub startUDPSocket
                         LocalPort => $con->{srcport},
                         ReuseAddr => $reuse ? 1 : 0,
 
-                        #ReusePort => $reuse ? 1 : 0,
                         Proto => 'udp',
                     ) or die "ERROR in Socket Creation : $!\n";
                 };
@@ -315,7 +397,7 @@ sub startUDPSocket
                     return;
                 }
                 else {
-#$wheel->put({ payload => [ 'This datagram will go to the default address.' ], addr => '1.2.3.4', port => 13456 });
+                    #$wheel->put({ payload => [ 'This datagram will go to the default address.' ], addr => '1.2.3.4', port => 13456 });
                     if ( $heap->{udp} ) {
                         $heap->{sessionid} = $session->ID();
                         $sessions->{ $heap->{sessionid} } = {
@@ -476,11 +558,9 @@ sub startUDPSocket
     );
 }
 
-
-# simplified explanation of this Session:
-# starts a loop after creation which calls fetchIPs() every second
-# which updates all variables and session if the local IP
-# (or the destination) ip changes
+# [Local IP Check Session]
+# Here to detect and handle local IP changes.
+# Starts a loop after creation which calls detect+handle_local_ip_change() every second
 POE::Session->create(
     inline_states => {
         _start => sub {
@@ -489,13 +569,13 @@ POE::Session->create(
         },
         loop => sub {
             my ( $kernel, $heap ) = @_[ KERNEL, HEAP ];
-            fetchIPs();
+            detect+handle_local_ip_change();
             $kernel->delay( loop => 1 );
         },
     },
 );
 
-# simplified explanation of this Session:
+# [Target Reachability Check (TRC) Session]
 # this Sessions executes loop all 5 seconds and checks if the used
 # connections are reachable.(Using the $seen and $lastseen variables)
 # If not, it takes the interface down (using reset_routing_table() ).
@@ -530,7 +610,7 @@ POE::Session->create(
     },
 );
 
-
+# [Receiver Session]
 # simplified explanation of this session:
 # (_start is triggered by creation of this session therefore
 # directly "here" before kernel->run() )
