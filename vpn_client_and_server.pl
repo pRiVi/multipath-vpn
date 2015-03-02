@@ -433,13 +433,14 @@ sub startUDPSocket
                 my ( $kernel, $heap, $session ) = @_[ KERNEL, HEAP, SESSION ];
 
                 my $curinput = undef;
-                while ( defined( $heap->{udp}->recv( $curinput, 1600 ) ) ) {
+                while ( defined( $heap->{udp}->recv( $curinput, 1600 ) ) )
+                {
                     $heap->{con}->{lastdstip}   = $heap->{udp}->peerhost();
                     $heap->{con}->{lastdstport} = $heap->{udp}->peerport();
-                    print "Incoming datagram from '"
-                      . length($curinput)
-                      . "' Bytes\n"
-                      if $printdebug;
+
+                    if ($printdebug) { 
+                        print("Incoming datagram from '" . length($curinput) . "' Bytes\n");
+                    }
                     if ($doPrepend) {
                         substr( $curinput, 0, length($doPrepend), "" );
                     }
@@ -451,12 +452,9 @@ sub startUDPSocket
                         $curinput = $replace . $curinput;
                     }
                     if ($doBase64) {
-
                         $curinput = decode_base64($curinput);
-
                     }
-                    if ( !$nodeadpeer
-                        && ( substr( $curinput, 0, 4 ) eq "SES:" ) )
+                    if ( !$nodeadpeer && ( substr( $curinput, 0, 4 ) eq "SES:" ) )
                     {
                         my $announcement = [ split( ":", $curinput ) ];
                         shift(@$announcement);
@@ -484,8 +482,9 @@ sub startUDPSocket
                           . join( ",", @$myseen ) . "\n";
                     }
                     else {
-                        $kernel->call( $tuntapsession => "data", $curinput )
-                          if $tuntapsession;
+                        if ($tuntapsession) { 
+                            $kernel->call( $tuntapsession => "data", $curinput );
+                        }
                     }
                 }
             },
@@ -626,14 +625,14 @@ POE::Session->create(
               (      ( $config->{local}->{ip} =~ /^[\d\.]+$/ )
                   && ( $config->{local}->{options} !~ /tap/ ) ) ? 1 : 0;
 
-            $heap->{fh} = new IO::File( TUNNEL_DEVICE, 'r+' )
+            $heap->{tun_device} = new IO::File( TUNNEL_DEVICE, 'r+' )
               or die "Can't open " . TUNNEL_DEVICE . ": $!";
 
             $heap->{ifr} = pack( STRUCT_IFREQ,
                 $dotun ? 'tun%d' : 'tap%d',
                 $dotun ? IFF_TUN : IFF_TAP );
 
-            ioctl $heap->{fh}, TUNSETIFF, $heap->{ifr}
+            ioctl $heap->{tun_device}, TUNSETIFF, $heap->{ifr}
               or die "Can't ioctl() tunnel: $!";
 
             $heap->{interface} = unpack STRUCT_IFREQ, $heap->{ifr};
@@ -671,17 +670,17 @@ POE::Session->create(
 
             system( "ifconfig " . $heap->{interface} . " mtu " . $config->{local}->{mtu} );
 
-            $kernel->select_read( $heap->{fh}, "got_input" );
+            $kernel->select_read( $heap->{tun_device}, "got_input" );
             $tuntapsession = $_[SESSION];
         },
         got_input => sub {
             my ( $kernel, $heap, $socket ) = @_[ KERNEL, HEAP, ARG0 ];
             
-            if ( $socket != $heap->{fh} ) {
+            if ( $socket != $heap->{tun_device} ) {
                 die();
             }
             
-            while ( sysread( $heap->{fh}, my $buf = "", TUN_MAX_FRAME ) )
+            while ( sysread( $heap->{tun_device}, my $buf = "", TUN_MAX_FRAME ) )
             {
                 foreach my $sessid (
                     sort( {( $sessions->{$a}->{tried} || 0 )
@@ -705,9 +704,9 @@ POE::Session->create(
         },
         data => sub {
             my ( $kernel, $heap, $buf ) = @_[ KERNEL, HEAP, ARG0 ];
-            my $size = syswrite( $heap->{fh}, $buf );
+            my $size = syswrite( $heap->{tun_device}, $buf );
 
-            unless (( $size == length($buf) ))
+            unless ( $size == length($buf) )
             { 
                 print $size . " != " . length($buf) . "\n";
             }
