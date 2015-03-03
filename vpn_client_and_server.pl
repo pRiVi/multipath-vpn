@@ -113,7 +113,6 @@ my $printdebug = 0;
 $| = 1;                    # disable terminal output buffering
 my $looktime   = 5;
 my $nodeadpeer = 0;
-my $debug      = 0;
 my $up         = 0;
 
 my $tuntapsession = undef;
@@ -381,14 +380,13 @@ sub startUDPSocket
                   . ( $con->{dstport} || "-" ) . "\n" );
 
                 eval {
-                    $heap->{udp} = new IO::Socket::INET(
-                        PeerAddr => $bind ? $con->{dstip}   : undef,
-                        PeerPort => $bind ? $con->{dstport} : undef,
+                    $heap->{udp_socket} = new IO::Socket::INET(
+                        PeerAddr  => $bind ? $con->{dstip}   : undef,
+                        PeerPort  => $bind ? $con->{dstport} : undef,
                         LocalAddr => $con->{curip},
                         LocalPort => $con->{srcport},
                         ReuseAddr => $reuse ? 1 : 0,
-
-                        Proto => 'udp',
+                        Proto     => 'udp',
                     ) or die "ERROR in Socket Creation : $!\n";
                 };
 
@@ -398,16 +396,16 @@ sub startUDPSocket
                 }
                 else {
                     #$wheel->put({ payload => [ 'This datagram will go to the default address.' ], addr => '1.2.3.4', port => 13456 });
-                    if ( $heap->{udp} ) {
+                    if ( $heap->{udp_socket} ) {
                         $heap->{sessionid} = $session->ID();
                         $sessions->{ $heap->{sessionid} } = {
                             heap   => $heap,
                             factor => $heap->{con}->{factor},
                             con    => $con,
                         };
-                        $kernel->select_read( $heap->{udp}, "got_data_from_udp" );
+                        $kernel->select_read( $heap->{udp_socket}, "got_data_from_udp" );
                         if ($bind) {
-                            unless ( defined( $heap->{udp}->send("a") ) ) {
+                            unless ( defined( $heap->{udp_socket}->send("a") ) ) {
                                 print "PostBind not worked: " . $! . "\n";
                             }
                         }
@@ -433,10 +431,10 @@ sub startUDPSocket
                 my ( $kernel, $heap, $session ) = @_[ KERNEL, HEAP, SESSION ];
 
                 my $curinput = undef;
-                while ( defined( $heap->{udp}->recv( $curinput, 1600 ) ) )
+                while ( defined( $heap->{udp_socket}->recv( $curinput, 1600 ) ) )
                 {
-                    $heap->{con}->{lastdstip}   = $heap->{udp}->peerhost();
-                    $heap->{con}->{lastdstport} = $heap->{udp}->peerport();
+                    $heap->{con}->{lastdstip}   = $heap->{udp_socket}->peerhost();
+                    $heap->{con}->{lastdstport} = $heap->{udp_socket}->peerport();
 
                     if ($printdebug) { 
                         print("Incoming datagram from '" . length($curinput) . "' Bytes\n");
@@ -532,7 +530,7 @@ sub startUDPSocket
                     if ($doPrepend) {
                         $input = $doPrepend . $input;
                     }
-                    if ( !defined( $heap->{udp}->send( $input, 0, $to ) ) ) {
+                    if ( !defined( $heap->{udp_socket}->send( $input, 0, $to ) ) ) {
                         print "X";
 
                         #select(undef, undef, undef, 0.1);
@@ -548,9 +546,9 @@ sub startUDPSocket
                 my ( $kernel, $heap, $session ) = @_[ KERNEL, HEAP, SESSION ];
                 print "SOcket terminated.\n";
                 delete $sessions->{ $session->ID() };
-                $kernel->select_read( $heap->{udp} );
-                close( $heap->{udp} );
-                delete $heap->{udp};
+                $kernel->select_read( $heap->{udp_socket} );
+                close( $heap->{udp_socket} );
+                delete $heap->{udp_socket};
             },
         },
         args => [$con],
