@@ -483,7 +483,7 @@ sub startUDPSocket
                     }
                     else {
                         if ($tuntapsession) { 
-                            $kernel->call( $tuntapsession => "data", $curinput );
+                            $kernel->call( $tuntapsession => "put_into_tun_device", $curinput );
                         }
                     }
                 }
@@ -670,16 +670,17 @@ POE::Session->create(
 
             system( "ifconfig " . $heap->{interface} . " mtu " . $config->{local}->{mtu} );
 
-            $kernel->select_read( $heap->{tun_device}, "got_input" );
+            $kernel->select_read( $heap->{tun_device}, "got_packet_from_tun_device" );
             $tuntapsession = $_[SESSION];
         },
-        got_input => sub {
+        got_packet_from_tun_device => sub {
             my ( $kernel, $heap, $socket ) = @_[ KERNEL, HEAP, ARG0 ];
             
             if ( $socket != $heap->{tun_device} ) {
                 die();
             }
-            
+
+            # read data from the tun device
             while ( sysread( $heap->{tun_device}, my $buf = "", TUN_MAX_FRAME ) )
             {
                 foreach my $sessid (
@@ -702,8 +703,10 @@ POE::Session->create(
                 }
             }
         },
-        data => sub {
+        put_into_tun_device => sub {
             my ( $kernel, $heap, $buf ) = @_[ KERNEL, HEAP, ARG0 ];
+
+            # write data of $buf into the tun-device
             my $size = syswrite( $heap->{tun_device}, $buf );
 
             unless ( $size == length($buf) )
