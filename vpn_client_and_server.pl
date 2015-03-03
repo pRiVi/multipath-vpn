@@ -104,9 +104,10 @@ use constant STRUCT_IFREQ  => 'Z16 s';
 use constant TUNNEL_DEVICE => '/dev/net/tun';
 
 # Variables
-my $sessions   = {};
-my $doCrypt    = 0;
+my $udp_socket_sessions   = {};
 my $systemd_event_session = {};
+
+my $doCrypt    = 0;   # warn: only rot-128 "crypt"
 my $doPrepend  = undef;    # "abcdefghikjlmnopqrstuvwxyz";
 my $doBase64   = 0;
 my $printdebug = 0;
@@ -224,11 +225,11 @@ sub printDebug
         "\t",
         map {
                 $_ . "="
-              . ( $sessions->{$_}->{high}        || "-" ) . "("
-              . ( $sessions->{$_}->{outcount}    || "-" ) . "/" . ""
-              . ( $sessions->{$_}->{curoutcount} || "-" ) . "/" . ""
-              . ( $sessions->{$_}->{tried}       || "-" ) . ")"
-        } keys %$sessions
+              . ( $udp_socket_sessions->{$_}->{high}        || "-" ) . "("
+              . ( $udp_socket_sessions->{$_}->{outcount}    || "-" ) . "/" . ""
+              . ( $udp_socket_sessions->{$_}->{curoutcount} || "-" ) . "/" . ""
+              . ( $udp_socket_sessions->{$_}->{tried}       || "-" ) . ")"
+        } keys %$udp_socket_sessions
     ) . "\n";
 }
 
@@ -400,7 +401,7 @@ sub startUDPSocket
 
                     if ( $heap->{udp_socket} ) {
                         $heap->{sessionid} = $session->ID();
-                        $sessions->{ $heap->{sessionid} } = {
+                        $udp_socket_sessions->{ $heap->{sessionid} } = {
                             heap   => $heap,
                             factor => $heap->{con}->{factor},
                             con    => $con,
@@ -430,7 +431,7 @@ sub startUDPSocket
                 my ( $kernel, $heap, $session ) = @_[ KERNEL, HEAP, SESSION ];
 
                 print( "Session term.\n");
-                delete( $sessions->{ $session->ID() } );
+                delete( $udp_socket_sessions->{ $session->ID() } );
             },
             got_data_from_udp => sub {
                 my ( $kernel, $heap, $session ) = @_[ KERNEL, HEAP, SESSION ];
@@ -494,7 +495,7 @@ sub startUDPSocket
                     }
                     else {
                         if ($tuntapsession) { 
-                            $kernel->call( $tuntapsession => "put_into_tun_device", $curinput );
+                            $kernel->call( $tuntapsession, "put_into_tun_device", $curinput );
                         }
                     }
                 }
@@ -555,7 +556,7 @@ sub startUDPSocket
                 my ( $kernel, $heap, $session ) = @_[ KERNEL, HEAP, SESSION ];
                 
                 print( "Socket terminated" . "\n" );
-                delete( $sessions->{ $session->ID() } );
+                delete( $udp_socket_sessions->{ $session->ID() } );
 
                 $kernel->select_read( $heap->{udp_socket} );
 
@@ -700,21 +701,26 @@ POE::Session->create(
             while ( sysread( $heap->{tun_device}, my $buf = "", TUN_MAX_FRAME ) )
             {
                 foreach my $sessid (
-                    sort( {( $sessions->{$a}->{tried} || 0 )
-                          <=> ( $sessions->{$b}->{tried} || 0 ) }
-                      keys( %$sessions))
+                    # sort the udp-socket sessions after "how often they have been used"
+                    # this ensures the configured trafic ratio is used.
+                    # first use the the session which has been used less in past.
+                    sort( {( $udp_socket_sessions->{$a}->{tried} || 0 )
+                          <=> ( $udp_socket_sessions->{$b}->{tried} || 0 ) }
+                      keys( %$udp_socket_sessions))
                   )
                 {
-                    if ($sessions->{$sessid}->{factor})
+                    if ($udp_socket_sessions->{$sessid}->{factor})
                     { 
-                        $sessions->{$sessid}->{tried} += ( 1 / $sessions->{$sessid}->{factor} );
+                        # mark that this session has been tried
+                        # to ensure it gets used less often in future.
+                        $udp_socket_sessions->{$sessid}->{tried} += ( 1 / $udp_socket_sessions->{$sessid}->{factor} );
                     }
-                    unless ( $nodeadpeer || $sessions->{$sessid}->{con}->{active} )
+                    unless ( $nodeadpeer || $udp_socket_sessions->{$sessid}->{con}->{active} )
                     { 
                         next;
                     }
 
-                    $_[KERNEL]->call( $sessid => "send_through_udp" => $buf );
+                    $_[KERNEL]->call( $sessid, "send_through_udp", $buf );
                     last;
                 }
             }
