@@ -106,6 +106,7 @@ use constant TUNNEL_DEVICE => '/dev/net/tun';
 # Variables
 my $sessions   = {};
 my $doCrypt    = 0;
+my $systemd_event_session = {};
 my $doPrepend  = undef;    # "abcdefghikjlmnopqrstuvwxyz";
 my $doBase64   = 0;
 my $printdebug = 0;
@@ -580,6 +581,8 @@ POE::Session->create(
             my ( $kernel, $heap ) = @_[ KERNEL, HEAP ];
 
             handle_local_ip_change();
+            $kernel->post($systemd_event_session, "partial_init_step_completed" );
+            
             $kernel->delay( loop => 1 );
         },
     },
@@ -684,6 +687,7 @@ POE::Session->create(
 
             $kernel->select_read( $heap->{tun_device}, "got_packet_from_tun_device" );
             $tuntapsession = $_[SESSION];
+            $kernel->post($systemd_event_session, "partial_init_step_completed");
         },
         got_packet_from_tun_device => sub {
             my ( $kernel, $heap, $socket ) = @_[ KERNEL, HEAP, ARG0 ];
@@ -728,5 +732,28 @@ POE::Session->create(
         },
     }
 );
+
+# [systemd-event session]
+# This session calls systemd-notify --ready when multipathvpn is started succesfully and ready
+# This is implemented via:
+# There are to critical steps which have to happen to make the tunnel avaialable.
+# After each of this step a event is sent to this session.
+# If this session got 2 of these events it calls systemd-notify and kills itself gracefully.
+POE::Session->create(
+    inline_states => {
+        _start => sub {
+            # store a reference to this session in the global variable
+            $systemd_event_session = $_[SESSION];
+        },
+        partial_init_step_completed => {
+
+        },
+        harakiri => sub {
+            # I die with honor, great honor.
+        }    
+        
+    }     
+);
+
 
 $poe_kernel->run();
