@@ -636,6 +636,7 @@ POE::Session->create(
               (      ( $config->{local}->{ip} =~ /^[\d\.]+$/ )
                   && ( $config->{local}->{options} !~ /tap/ ) ) ? 1 : 0;
 
+            # this creates the tun device
             $heap->{tun_device} = new IO::File( TUNNEL_DEVICE, 'r+' )
               or die "Can't open " . TUNNEL_DEVICE . ": $!";
 
