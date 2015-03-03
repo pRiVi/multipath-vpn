@@ -751,11 +751,29 @@ POE::Session->create(
             # store a reference to this session in the global variable
             $systemd_event_session = $_[SESSION];
         },
-        partial_init_step_completed => {
+        partial_init_step_completed => sub {
+            my ( $kernel, $heap ) = @_[ KERNEL, HEAP ];
+
+            # increment the step counter
+            # if this key does not exist in the hashmap
+            # it is created with value 1
+            $heap->{init_step_counter}++ ;
+
+            if ( 2 <= $heap->{init_step_counter} ) {
+                # all needed start steps are done
+
+                # notify systemd
+                system("systemd-notify --ready");
+
+                # commit harakiri
+                yield("harakiri");
+            }
 
         },
         harakiri => sub {
             # I die with honor, great honor.
+            # Actually no homicidally act is needed here
+            # because POE cleans up uneeded sessions automatically
         }    
         
     }     
