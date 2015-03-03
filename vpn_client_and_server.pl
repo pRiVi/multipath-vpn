@@ -295,7 +295,7 @@ sub detect+handle_local_ip_change
                 || $config->{links}->{$curlink}->{lastdstip} ))
             { 
                 $poe_kernel->post(
-                    $config->{links}->{$curlink}->{cursession} => "Send" => "SES:"
+                    $config->{links}->{$curlink}->{cursession} => "send_through_udp" => "SES:"
                         . $curlink . ":"
                         . join( ",", keys %$lastseen ) );
             }
@@ -405,7 +405,7 @@ sub startUDPSocket
                             factor => $heap->{con}->{factor},
                             con    => $con,
                         };
-                        $kernel->select_read( $heap->{udp}, "input" );
+                        $kernel->select_read( $heap->{udp}, "got_data_from_udp" );
                         if ($bind) {
                             unless ( defined( $heap->{udp}->send("a") ) ) {
                                 print "PostBind not worked: " . $! . "\n";
@@ -429,7 +429,7 @@ sub startUDPSocket
                 print "Session term.\n";
                 delete $sessions->{ $session->ID() };
             },
-            input => sub {
+            got_data_from_udp => sub {
                 my ( $kernel, $heap, $session ) = @_[ KERNEL, HEAP, SESSION ];
 
                 my $curinput = undef;
@@ -488,10 +488,10 @@ sub startUDPSocket
                     }
                 }
             },
-            Send => sub {
+            send_through_udp => sub {
                 my ( $kernel, $heap, $input ) = @_[ KERNEL, HEAP, ARG0 ];
 
-#print "Sending ".length($input)." Bytes via UDP to ".$heap->{con}->[0].":".$heap->{con}->[1].".\n";
+                #print "Sending ".length($input)." Bytes via UDP to ".$heap->{con}->[0].":".$heap->{con}->[1].".\n";
                 my $to = undef;
                 if ( $heap->{con}->{dstip} && $heap->{con}->{dstport} ) {
                     if ( my $dstip = inet_aton( $heap->{con}->{dstip} ) ) {
@@ -698,7 +698,7 @@ POE::Session->create(
                         next;
                     }
 
-                    $_[KERNEL]->call( $sessid => "Send" => $buf );
+                    $_[KERNEL]->call( $sessid => "send_through_udp" => $buf );
                     last;
                 }
             }
