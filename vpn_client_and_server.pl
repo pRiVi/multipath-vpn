@@ -29,7 +29,7 @@ every B<POE::Session-E<gt>create(> line.
 =head3 [Local IP Check Session]
 
 This Session is created B<at startup> exists permanentely and is I<unique> for one running instance of multipath vpn.
-Once a seconds it calls I<detect+handle_local_ip_change()>.
+Once a seconds it calls I<handle_local_ip_change()>.
 The sessions purpose is to ensure multipath vpn continues working even if
 interface IP address changes (of server or client both are handled) happen.
 
@@ -234,7 +234,7 @@ sub printDebug
 
 =pod
 
-=head2 detect+handle_local_ip_change()
+=head2 handle_local_ip_change()
 
 Detects ip changes of the local network interfaces used for listening for or connecting to another
 multipath vpn instance.
@@ -257,7 +257,7 @@ If a IP change is detected the following is done:
 
 =cut
 
-sub detect+handle_local_ip_change
+sub handle_local_ip_change
 {
     foreach my $curlink ( keys %{ $config->{links} } )
     {
@@ -559,7 +559,7 @@ sub startUDPSocket
 
 # [Local IP Check Session]
 # Here to detect and handle local IP changes.
-# Starts a loop after creation which calls detect+handle_local_ip_change() every second
+# Starts a loop after creation which calls handle_local_ip_change() every second
 POE::Session->create(
     inline_states => {
         _start => sub {
@@ -568,7 +568,7 @@ POE::Session->create(
         },
         loop => sub {
             my ( $kernel, $heap ) = @_[ KERNEL, HEAP ];
-            detect+handle_local_ip_change();
+            handle_local_ip_change();
             $kernel->delay( loop => 1 );
         },
     },
