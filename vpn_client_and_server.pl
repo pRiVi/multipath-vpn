@@ -390,12 +390,13 @@ sub startUDPSocket
                     ) or die "ERROR in Socket Creation : $!\n";
                 };
 
+                # if the previous eval produced an error
                 if ($@) {
                     print "Not possible: " . $@ . "\n";
                     return;
                 }
                 else {
-                    #$wheel->put({ payload => [ 'This datagram will go to the default address.' ], addr => '1.2.3.4', port => 13456 });
+
                     if ( $heap->{udp_socket} ) {
                         $heap->{sessionid} = $session->ID();
                         $sessions->{ $heap->{sessionid} } = {
@@ -403,7 +404,10 @@ sub startUDPSocket
                             factor => $heap->{con}->{factor},
                             con    => $con,
                         };
+
+                        # select read registers a event to be called on read input on the socket
                         $kernel->select_read( $heap->{udp_socket}, "got_data_from_udp" );
+
                         if ($bind) {
                             unless ( defined( $heap->{udp_socket}->send("a") ) ) {
                                 print "PostBind not worked: " . $! . "\n";
@@ -420,12 +424,12 @@ sub startUDPSocket
                 }
 
                 $con->{cursession} = $heap->{sessionid};
-
             },
             _stop => sub {
                 my ( $kernel, $heap, $session ) = @_[ KERNEL, HEAP, SESSION ];
-                print "Session term.\n";
-                delete $sessions->{ $session->ID() };
+
+                print( "Session term.\n");
+                delete( $sessions->{ $session->ID() } );
             },
             got_data_from_udp => sub {
                 my ( $kernel, $heap, $session ) = @_[ KERNEL, HEAP, SESSION ];
@@ -439,9 +443,11 @@ sub startUDPSocket
                     if ($printdebug) { 
                         print("Incoming datagram from '" . length($curinput) . "' Bytes\n");
                     }
+                    
                     if ($doPrepend) {
                         substr( $curinput, 0, length($doPrepend), "" );
                     }
+                    
                     if ($doCrypt) {
                         my $replace = substr( $curinput, 0, 200, "" );
                         $replace = join( "",
@@ -449,35 +455,41 @@ sub startUDPSocket
                               split( //, $replace ) );
                         $curinput = $replace . $curinput;
                     }
+
                     if ($doBase64) {
                         $curinput = decode_base64($curinput);
                     }
+
                     if ( !$nodeadpeer && ( substr( $curinput, 0, 4 ) eq "SES:" ) )
                     {
                         my $announcement = [ split( ":", $curinput ) ];
                         shift(@$announcement);
                         my $dstlink = shift(@$announcement);
-                        $config->{$dstlink}->{lastdstip} =
-                          $heap->{con}->{lastdstip};
-                        $config->{$dstlink}->{lastdstport} =
-                          $heap->{con}->{lastdstport};
+
+                        $config->{$dstlink}->{lastdstip} = $heap->{con}->{lastdstip};
+                        $config->{$dstlink}->{lastdstport} = $heap->{con}->{lastdstport};
+
                         my $myseen = [];
+                        
                         if ( my $tmp = shift(@$announcement) ) {
                             $myseen = [ split( ",", $tmp ) ];
                         }
+
                         $seen->{$dstlink} = scalar(@$myseen);
+
                         foreach my $curlink ( keys %{ $config->{links} } ) {
                             $config->{links}->{$curlink}->{active} =
                               scalar( grep { $curlink eq $_ } @$myseen )
                               ? 1
                               : 0;
                         }
-                        print "Session announcement "
+
+                        print( "Session announcement "
                           . length($curinput)
                           . " bytes: "
                           . $dstlink
                           . " and seen links "
-                          . join( ",", @$myseen ) . "\n";
+                          . join( ",", @$myseen ) . "\n" );
                     }
                     else {
                         if ($tuntapsession) { 
@@ -489,16 +501,13 @@ sub startUDPSocket
             send_through_udp => sub {
                 my ( $kernel, $heap, $input ) = @_[ KERNEL, HEAP, ARG0 ];
 
-                #print "Sending ".length($input)." Bytes via UDP to ".$heap->{con}->[0].":".$heap->{con}->[1].".\n";
                 my $to = undef;
                 if ( $heap->{con}->{dstip} && $heap->{con}->{dstport} ) {
                     if ( my $dstip = inet_aton( $heap->{con}->{dstip} ) ) {
-                        $to =
-                          pack_sockaddr_in( $heap->{con}->{dstport}, $dstip );
+                        $to = pack_sockaddr_in( $heap->{con}->{dstport}, $dstip );
                     }
                     else {
-                        print "Unable to reslove "
-                          . $heap->{con}->{dstip} . "\n";
+                        print( "Unable to reslove " . $heap->{con}->{dstip} . "\n");
                     }
                 }
                 elsif ($heap->{con}->{lastdstip}
@@ -513,13 +522,14 @@ sub startUDPSocket
                           . $heap->{con}->{lastdstip} . "\n";
                     }
                 }
+
                 if ($to) {
                     my $count = 0;
 
-                    #while
                     if ($doBase64) {
                         $input = encode_base64( $input, "" );
                     }
+
                     if ($doCrypt) {
                         my $replace = substr( $input, 0, 200, "" );
                         $replace = join( "",
@@ -527,28 +537,29 @@ sub startUDPSocket
                               split( //, $replace ) );
                         $input = $replace . $input;
                     }
+
                     if ($doPrepend) {
                         $input = $doPrepend . $input;
                     }
+
                     if ( !defined( $heap->{udp_socket}->send( $input, 0, $to ) ) ) {
                         print "X";
-
-                        #select(undef, undef, undef, 0.1);
-                        #last if ($count++ > $MEXRETRYRESEND);
                     }
                 }
                 else {
-                    print $heap->{con}->{name}
-                      . ": Cannot send: no dst ip/port.\n";
+                    print( $heap->{con}->{name} . ": Cannot send: no dst ip/port.\n");
                 }
             },
             terminate => sub {
                 my ( $kernel, $heap, $session ) = @_[ KERNEL, HEAP, SESSION ];
-                print "SOcket terminated.\n";
-                delete $sessions->{ $session->ID() };
+                
+                print( "Socket terminated" . "\n" );
+                delete( $sessions->{ $session->ID() } );
+
                 $kernel->select_read( $heap->{udp_socket} );
+
                 close( $heap->{udp_socket} );
-                delete $heap->{udp_socket};
+                delete( $heap->{udp_socket} );
             },
         },
         args => [$con],
@@ -562,10 +573,12 @@ POE::Session->create(
     inline_states => {
         _start => sub {
             my ( $kernel, $heap ) = @_[ KERNEL, HEAP ];
+
             $kernel->yield("loop");
         },
         loop => sub {
             my ( $kernel, $heap ) = @_[ KERNEL, HEAP ];
+
             handle_local_ip_change();
             $kernel->delay( loop => 1 );
         },
