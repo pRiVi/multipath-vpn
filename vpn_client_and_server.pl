@@ -278,9 +278,17 @@ Resets all routing table entries made by this programm.
 sub doIf {
    my $up = shift;
    foreach my $curroute (@{$config->{route}}) {
-      my $tmp = "ip route delete ".$curroute->{to}."/".$curroute->{mask}.(defined($curroute->{metric}) ? " metric ".$curroute->{metric} : "").($curroute->{table} ? " table ".$curroute->{table} : "");
-      print $tmp."\n";
-      system($tmp);
+      my $defaultrouteexists = system("ip route list |grep default |grep -v metric");
+      my $tmp = undef;
+      if ($curroute->{metric} || ($defaultrouteexists == 0)) {
+         $tmp = "ip route delete ".$curroute->{to}."/".$curroute->{mask}.
+            ((defined($curroute->{metric})  &&
+                     ($curroute->{metric} ne "")) ? " metric ".$curroute->{metric} : "").
+            ((defined($curroute->{table}) &&
+                     ($curroute->{table}  ne "")) ? " table ".$curroute->{table} : "");
+         print $tmp."\n";
+         system($tmp);
+      }
       $tmp = "ip route ".($up ? "add" : "delete")." ".$curroute->{to}."/".$curroute->{mask}." via ".$curroute->{gw}.(defined($curroute->{metric}) ? " metric ".$curroute->{metric} : "").($curroute->{table} ? " table ".$curroute->{table} : "");
       print $tmp."\n";
       system($tmp);
