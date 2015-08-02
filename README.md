@@ -8,7 +8,7 @@ A tunneling VPN client and server, which supports failover and multiple connecti
 
 ### On client
 ```bash
-git clone https://github.com/richi235/multipath-vpn
+git clone https://github.com/privi/multipath-vpn
 
 # installing the required perl modules:
 cpan POE::Wheel::UDP IO::Interface::Simple
@@ -20,7 +20,7 @@ Edit the config conforming to your network setup.
 
 ### On server 
 ```bash
-git clone https://github.com/richi235/multipath-vpn
+git clone https://github.com/privi/multipath-vpn
 
 # installing the required perl modules:
 cpan POE::Wheel::UDP IO::Interface::Simple
