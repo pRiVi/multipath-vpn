@@ -349,7 +349,7 @@ sub startUDPSocket {
          input => sub {
             my ($kernel, $heap, $session) = @_[KERNEL, HEAP, SESSION];
             #print $input."\n";
-            uy $curinput = undef;
+            my $curinput = undef;
             while (defined($heap->{udp}->recv($curinput,1600))) {
                $heap->{con}->{lastdstip}   = $heap->{udp}->peerhost();
                $heap->{con}->{lastdstport} = $heap->{udp}->peerport();
@@ -393,7 +393,7 @@ sub startUDPSocket {
             my ($kernel, $heap, $input) = @_[KERNEL, HEAP, ARG0];
             #print "Sending ".length($input)." Bytes via UDP to ".$heap->{con}->[0].":".$heap->{con}->[1].".\n";
             my $to = undef;
-            if ($heap->{con}->{dstip} && $heap->{con}->{dstport)) {
+            if ($heap->{con}->{dstip} && $heap->{con}->{dstport}) {
                if (my $dstip = inet_aton($heap->{con}->{dstip})) {
                   $to = pack_sockaddr_in($heap->{con}->{dstport}, $dstip);
                } else {
